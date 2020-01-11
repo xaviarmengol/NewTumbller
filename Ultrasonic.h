@@ -36,7 +36,6 @@ bool right_test_flag = false;
 bool right_is_obstacle = false;
 
 
-
 void rightFilter(bool value)
 {
   if (right_flag[right_index])

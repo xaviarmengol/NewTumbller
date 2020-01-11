@@ -35,11 +35,27 @@ void KalmanFilter::Kalman_Filter(double angle_m, double gyro_m,float dt,float Q_
   angle_dot = gyro_m - q_bias;
 }
 
-void KalmanFilter::Angle(int16_t ax, int16_t ay, int16_t az, int16_t gx, int16_t gy, int16_t gz, float dt, float Q_angle, float Q_gyro, float R_angle, float C_0, float K1) {
+void KalmanFilter::Angle(int16_t ax, int16_t ay, int16_t az, int16_t gxInp, int16_t gyInp, int16_t gzInp, float dt, float Q_angle, float Q_gyro, float R_angle, float C_0, float K1) {
+
+  gx = gxInp - gxOffset;
+  gy = gyInp - gyOffset;
+  gz = gzInp -  gzOffset;
+  
   float Angle = atan2(ay , az) * 57.3;
-  Gyro_x = (gx - 128.1) / 131;
+  Gyro_x = (gx) / 131; // -128.1 originalment? 
   Kalman_Filter(Angle, Gyro_x, dt, Q_angle, Q_gyro, R_angle, C_0);
   Gyro_z = -gz / 131;
+
+  Gyro_y = gy / 131; // Todo mirar si es correcte
+}
+
+
+void KalmanFilter::setGyroOffset(float gxOff, float gyOff, float gzOff){
+
+  gxOffset=gxOff;
+  gyOffset=gyOff;
+  gzOffset=gzOff;
+  
 }
 
 //Band pass chebyshev filter order=1 alpha1=0.057 alpha2=0.061 

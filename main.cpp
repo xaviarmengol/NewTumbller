@@ -28,24 +28,32 @@ void setup()
 {
     Serial.begin(115200);
     ultrasonicInit();
-    //irSensor.irInit();
-    
+        
+    kalmanfilter.setGyroOffset(-400, -56, -218); // From calibration
 
     // inicialització de les globals
 
     function_mode = IDLE;
     motion_mode = START;
 
-    //tasca principal ciclica que mante l'equilibri
     carInitialize();
 
-    //test////////////////////////////////////////////////////////////////////////////////////////////7
-    //pwmManual = true;
-    //pwmLeftManual = 0.0;//double(pasTest) * 30.0;
-    //pwmRightManual = 0.0;//double(pasTest) * 30.0;
+    initializeEncoders();
 
-    //velocitatManual = true;
-    //settingCarSpeedManual = 0;
+    //tasca principal ciclica que mante l'equilibri
+
+    manualSpeed = false;
+    settingCarSpeedManual = 0;
+
+    manualTurnSpeed = false;
+    settingTurnSpeedManual = 0;
+
+    controlModeStr="std"; //pwmManual onlySpeedControl onlyBalanceControl onlyRotationControl noSincronControl
+
+    launchControlTask(carControlTask, 5);
+
+    pwmLeftManual = 0.0;//double(pasTest) * 30.0;
+    pwmRightManual = 0.0;//double(pasTest) * 30.0;
 
     startTime = millis();
     start_prev_time = millis();
@@ -54,16 +62,23 @@ void setup()
 
 void loop()
 {
+    // El control d'equilibri NO es fa al LOOP. Es fa a una tasca síncrona que s'ha llançat al SETUP
+
     getDistance();
     checkObstacle();
 
+    //right_is_obstacle;
+    //left_is_obstacle;
+    //distance_value;
+
     voltage = volt.measure();
     if (volt.isLowVoltage()) {
-        Serial.println("Low Battery. Going to STOP");
+        Serial.println("Low Battery. Going to STOP: " + String(voltage) + "V");
         motion_mode = STOP;
     }
-    
+
     setMotionState();
 
-    debugPrint.print();
+    //debugPrint.printAccGyro(250);
+    debugPrint.print(250);
 }

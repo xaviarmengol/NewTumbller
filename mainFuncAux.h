@@ -11,28 +11,26 @@ void setMotionState() {
   case STANDBY:
 
     Serial.println("Dins Standby");
-    //setting_turn_speed = 0;
-    // TEST
-    //setting_car_speed = 0;
+
     
     if (posicioCar<0.5 && estatTest==0){
-      setting_car_speed = 80.0;
-      setting_turn_speed = 0;
+      settingCarSpeed = 80.0;
+      settingTurnSpeed = 0;
     } else if (posicioCar>=0.5 && estatTest==0) {
       estatTest++;
     } else if (posicioCar>0.0 && estatTest==1) {
-      setting_car_speed = -80.0;
-      setting_turn_speed = 0;
+      settingCarSpeed = -80.0;
+      settingTurnSpeed = 0;
     } else if (posicioCar<=0.0 && estatTest==1) {
       estatTest++;
     } else if (estatTest==2 && rotacioCarGraus<=180.0) {
-      setting_car_speed = 0.0;
-      setting_turn_speed = 100.0;
+      settingCarSpeed = 0.0;
+      settingTurnSpeed = 100.0;
     } else if (estatTest==2 && rotacioCarGraus>180.0) {
       estatTest++;
     } else if (estatTest==3 && rotacioCarGraus>0.0) {
-      setting_car_speed = 0.0;
-      setting_turn_speed = -100.0;
+      settingCarSpeed = 0.0;
+      settingTurnSpeed = -100.0;
     } else if (estatTest==3 && rotacioCarGraus<=0.0) {
       estatTest=0;
     }
@@ -41,14 +39,13 @@ void setMotionState() {
 
   case STOP:
 
-    Serial.println("Stop");
     if (millis() - start_prev_time > 1000)
     {
-      Serial.println("Entra if");
+      
       //function_mode = IDLE;
       if (balance_angle_min <= kalmanfilter_angle && kalmanfilter_angle <= balance_angle_max)
       {
-        Serial.println("Entra canvi estat");
+      
         motion_mode = STANDBY;
         //rgb.lightOff();
       }
@@ -56,14 +53,13 @@ void setMotionState() {
     break;
 
   case START:
-    Serial.println("Start");
 
     if (millis() - start_prev_time > 2000)
     {
       if (balance_angle_min <= kalmanfilter_angle && kalmanfilter_angle <= balance_angle_max)
       {
         car_speed_error_integral = 0;
-        setting_car_speed = 0;
+        settingCarSpeed = 0;
         motion_mode = STANDBY;
         //rgb.lightOff();
       }
@@ -86,7 +82,8 @@ void setMotionState() {
 class DebugPrint {
     public:
         DebugPrint(unsigned long period);
-        void print();
+        void printAccGyro(unsigned long period=0);
+        void print(unsigned long period=0);
 
     private:
         unsigned long _periodMillis;
@@ -97,7 +94,30 @@ DebugPrint::DebugPrint(unsigned long period){
     _periodMillis = period;
 }
 
-void DebugPrint::print(){
+
+void DebugPrint::printAccGyro(unsigned long period){
+
+  if (period != 0) _periodMillis = period;
+
+  if (millis() - _lastTimeMillis > _periodMillis) {
+
+    String printStr = "";
+
+    printStr += "ax: " + String(ax) + " ay: " + String(ay) + " az: " + String(az) + "\n" + 
+    "gx: " + String(kalmanfilter.gx) +  " gy: " + String(kalmanfilter.gy) + " gz: "+ String(kalmanfilter.gz) + "\n" +
+    "angle: " + String(kalmanfilter_angle) + "\n";
+
+    Serial.print(printStr);
+
+    _lastTimeMillis = millis();
+  }
+
+}
+
+
+void DebugPrint::print(unsigned long period){
+
+    if (period !=0) _periodMillis = period;
    
     if (millis() - _lastTimeMillis > _periodMillis) 
     {
@@ -105,7 +125,7 @@ void DebugPrint::print(){
         Serial.print("VelAngular       : ");
         Serial.println(velAngularRoda);
         Serial.print("Car Speed Settin : ");
-        Serial.println(setting_car_speed);
+        Serial.println(settingCarSpeed);
         Serial.print("Error llaç vel   : ");
         Serial.println(car_speed_error);
         Serial.print("speedcrtoutput   : ");
@@ -117,7 +137,7 @@ void DebugPrint::print(){
         Serial.print("Posicio Car pul : ");
         Serial.println(posicioPulsos);
         Serial.print("Rotacio Car encoder: ");
-        Serial.println(rotacioCarGrausEncoder);
+        Serial.println(rotationCar);
         Serial.print("Angle           : ");
         Serial.println(kalmanfilter_angle);
         Serial.print("Motion Mode: ");
