@@ -1,11 +1,11 @@
 #include <Arduino.h>
 #include "PinChangeInt.h"
 #include "Pins.h"
-#include "mode.h"
 #include "BalanceCar.h"
 #include "Ultrasonic.h"
 #include "voltage.h"
 #include "globals.h"
+#include "Command.h"
 
 #include "mainFuncAux.h" // TODO: Arreglar
 
@@ -18,7 +18,6 @@ DebugPrint debugPrint(1000);
 
 double voltage;
 double distanceUltraSo;
-unsigned long lastTimeMillis;
 
 unsigned long startTime=0;
 bool flagStart = true;
@@ -31,9 +30,10 @@ void setup()
         
     kalmanfilter.setGyroOffset(-400, -56, -218); // From calibration
 
+    keyMotionModeInit();
+
     // inicialització de les globals
 
-    function_mode = IDLE;
     motion_mode = START;
 
     carInitialize();
@@ -60,10 +60,11 @@ void setup()
 
 }
 
+
+// El control d'equilibri NO es fa al LOOP. Es fa a una tasca síncrona que s'ha llançat al SETUP
+
 void loop()
 {
-    // El control d'equilibri NO es fa al LOOP. Es fa a una tasca síncrona que s'ha llançat al SETUP
-
     getDistance();
     checkObstacle();
 
@@ -73,12 +74,18 @@ void loop()
 
     voltage = volt.measure();
     if (volt.isLowVoltage()) {
-        Serial.println("Low Battery. Going to STOP: " + String(voltage) + "V");
-        motion_mode = STOP;
+        if (DEBUG==1){
+            Serial.println("Low Battery. Going to STOP: " + String(voltage) + "V");
+            motion_mode = STOP;
+        }
     }
+
+    getBluetoothData(); //LBE uses standar serial port, as is linked with external module
 
     setMotionState();
 
     //debugPrint.printAccGyro(250);
-    debugPrint.print(250);
+    //debugPrint.print(250);
+    //debugPrint.printAngleControl(250);
+    debugPrint.printRotControl(250);
 }

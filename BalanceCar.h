@@ -8,6 +8,22 @@
 #include "globals.h"
 
 
+// TODO: change all names to simplify
+
+// Angle AngleVel AngleAcc: Balance angle (Pitch)
+// Rot RotVel RotAcc: Orientation angle (Yaw)
+// wAngle wAngleVel wAngleAcc : Weel angle
+
+// xPos xVel xAcc: Car posicio speed and acceleration
+
+
+
+
+// Aux Functions
+
+bool carInSafeAngle();
+void stopCar();
+
 // Functions declaration short period
 
 void computeInputs();
@@ -21,7 +37,7 @@ void setPwmToMotor();
 
 void readLinearAndAngularMovement();
 void speedControl();
-void angularSpeedControl();
+void rotationControl();
 
 // Objects initialitzation
 
@@ -29,12 +45,12 @@ MPU6050 mpu;
 KalmanFilter kalmanfilter;
 
 // Definició de temps de cicle
-int dtTascaPrincipalMilis = 5;
-int multipleDtLlacVelocitat = 8;
+int dtFastTaskMillis = 5;
+int timesFastTask = 8;
 
 //Setting PID parameters
-double kp_balance = 55, kd_balance = 0.75;
-double kp_turn = 2.5, kd_turn = 0.5;
+double kpAngleControl = 55, kdAngleControl = 0.75;
+double kpTurnControl = 2.5, kdTurnControl = 0.5;
 
 double kp_speed = 4.0; // Original
 double kp_car_speed_error = 0.0;
@@ -43,41 +59,45 @@ double kd_car_speed_error = 1.0;
 
 double car_speed_to_pwm = 2.57; // TODO: Calcular amb càrrega. En buit es 2,57
 
-//Setting MPU6050 calibration parameters
-double angle_zero = 0;            //x axle angle calibration
-double angular_velocity_zero = 0; //x axle angular velocity calibration
+double velocitatCar;
+
+
+// Angle 
+double settingAngle = 0.0; 
+float angle;
+
+char minSafeAngle = -27;
+char maxSafeAngle = 27;   
+
+float Q_angle = 0.001, Q_gyro = 0.005, R_angle = 0.5, C_0 = 1, K1 = 0.05; // Angle Kalman filter parameters
+
+
+// Hardware
 
 volatile unsigned long encoder_count_right_a = 0;
 volatile unsigned long encoder_count_left_a = 0;
 int16_t ax, ay, az, gx, gy, gz;
 
-float dtSegons = float(dtTascaPrincipalMilis) / 1000.0;
+float dtSec = float(dtFastTaskMillis) / 1000.0;
 
-// Kalman filter parameters
 
-float Q_angle = 0.001, Q_gyro = 0.005, R_angle = 0.5, C_0 = 1, K1 = 0.05;
-
-// posicio cotxe
+// Car position
 
 double moveCarLongPeriod=0.0;
 double posicioCar=0.0;
 double posicioPulsos=0.0;
-
-// velocitats lineals
-
-double velocitatCar;
 
 
 // velocitats angulars
 
 double velAngularRoda;
 
-double rotacioParcialGraus = 0.0;
-double rotacioCarGraus = 0.0;
+double partialRotationDeg = 0.0;
+double rotationCarDeg = 0.0;
 
 // Output control
 
-double balance_control_output;
+double angleControlOutput;
 
 
 
@@ -88,7 +108,7 @@ int rotationCarPulse = 0;
 float rotationCar=0.0;
 
 double speed_control_output = 0.0;
-double rotation_control_output = 0.0;
+double rotationControlOutput = 0.0;
 double car_speed_filtered = 0.0;
 int speed_control_period_count = 0;
 
@@ -99,8 +119,14 @@ double car_speed_filtered_old = 0.0;
 double carSpeedErrorDif;
 double carSpeedErrorOld;
 
+int settingCarSpeedTarget = 0;
 int settingCarSpeed = 0;
+
+int settingTurnSpeedTarget=0;
 int settingTurnSpeed = 0;
+
+int accMax=2;
+int accTurnMax=2;
 
 int settingCarSpeedManual = 0;
 bool manualSpeed = false;
@@ -117,40 +143,11 @@ bool pwmManual = false;
 double pwmLeftManual = 0.0;
 double pwmRightManual = 0.0;
 
+// TODO: Activate filters
+
 FilterChBp1 filtrePwmL;
 FilterChBp1 filtrePwmR;
 
-
-float kalmanfilter_angle;
-// char balance_angle_min = -27;
-// char balance_angle_max = 27;
-char balance_angle_min = -22;
-char balance_angle_max = 22;
-
-void carStop()
-{
-    digitalWrite(AIN1, HIGH);
-    digitalWrite(BIN1, LOW);
-    digitalWrite(STBY_PIN, HIGH);
-    analogWrite(PWMA_LEFT, 0);
-    analogWrite(PWMB_RIGHT, 0);
-}
-
-void carForward(unsigned char speed)
-{
-    digitalWrite(AIN1, 0);
-    digitalWrite(BIN1, 0);
-    analogWrite(PWMA_LEFT, speed);
-    analogWrite(PWMB_RIGHT, speed);
-}
-
-void carBack(unsigned char speed)
-{
-  digitalWrite(AIN1, 1);
-  digitalWrite(BIN1, 1);
-  analogWrite(PWMA_LEFT, speed);
-  analogWrite(PWMB_RIGHT, speed);
-}
 
 
 void carControlTask() {
@@ -169,7 +166,7 @@ void carControlTask() {
     // Section executed at a lower frequency
     speed_control_period_count++;
 
-    if (speed_control_period_count >= multipleDtLlacVelocitat)
+    if (speed_control_period_count >= timesFastTask)
     {
         speed_control_period_count = 0;
 
@@ -177,13 +174,14 @@ void carControlTask() {
 
         speedControl();
 
-        angularSpeedControl();
+        rotationControl();
     }
 
     combineControls();
 
     setPwmToMotor();
 }
+
 
 // Functions in the short period cicle
 
@@ -210,18 +208,27 @@ void acumEncoderPulses() {
 void readAngle(){
 
     mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    kalmanfilter.Angle(ax, ay, az, gx, gy, gz, dtSegons, Q_angle, Q_gyro, R_angle, C_0, K1);
-    kalmanfilter_angle = kalmanfilter.angle;
+    kalmanfilter.Angle(ax, ay, az, gx, gy, gz, dtSec, Q_angle, Q_gyro, R_angle, C_0, K1);
+    angle = kalmanfilter.angle;
 }
 
 
+bool carInSafeAngle(){
+
+    return (angle > minSafeAngle && maxSafeAngle > angle);
+}
+
 void balanceControl(){
 
-    //PD sobre l'error d'angle TODO: perque Gyro_x no està filtrat? Gyro_x mediex velocitat
-    kp_balance = 55;
-    kd_balance = 0.75;
+    // PD sobre l'error d'angle TODO: perque Gyro_x no està filtrat? 
+    // Usa directament la velocitat, perque "suposa" que el setpoint de l'angle no varia
+    // d/dt (SP - Angle) aprox. -Velocitat Angular (si se suposa d/dt de SP = 0)
+    kpAngleControl = 55;
+    kdAngleControl = 0.75;
 
-    balance_control_output = kp_balance * (kalmanfilter_angle - angle_zero) + kd_balance * (kalmanfilter.Gyro_x - angular_velocity_zero);
+    // * by -1, because the output should be in the other direction than the angle
+
+    angleControlOutput = -1.0 * (kpAngleControl * (settingAngle - angle) + kdAngleControl * (-kalmanfilter.Gyro_x));
 
 }
 
@@ -235,16 +242,16 @@ void combineControls(){
         pwm_left = speed_control_output;
         pwm_right = speed_control_output;
     } else if (controlModeStr == "onlyBalanceControl") {
-        pwm_left = balance_control_output;
-        pwm_right = balance_control_output;
+        pwm_left = angleControlOutput;
+        pwm_right = angleControlOutput;
     } else if (controlModeStr == "onlyRotationControl") {
-        pwm_left = -rotation_control_output;
-        pwm_right = rotation_control_output;
+        pwm_left = -rotationControlOutput;
+        pwm_right = rotationControlOutput;
     } else if (controlModeStr ==  "noSincronControl") {
         
     } else {
-        pwm_left = balance_control_output + speed_control_output - rotation_control_output;
-        pwm_right = balance_control_output + speed_control_output + rotation_control_output;
+        pwm_left = angleControlOutput + speed_control_output - rotationControlOutput;
+        pwm_right = angleControlOutput + speed_control_output + rotationControlOutput;
     }
         
     
@@ -262,15 +269,17 @@ void setPwmToMotor(){
     // TODO: Avisar quan es satura. No interessa que s'acosti massa als màxims.
     // Veure grafiques del xip i la seva saturació.
 
-    if (pwm_left<-255 || pwm_left>255) Serial.println("Output: PWM LEFT saturated : " + String(pwm_left));
-    if (pwm_right<-255 || pwm_right>255) Serial.println("Output: PWM RIGHT saturated : " + String(pwm_right));
+    if (DEBUG == 1) {
+        if (pwm_left<-255 || pwm_left>255) Serial.println("Output: PWM LEFT saturated : " + String(pwm_left));
+        if (pwm_right<-255 || pwm_right>255) Serial.println("Output: PWM RIGHT saturated : " + String(pwm_right));
+    }
 
     pwm_left = constrain(pwm_left, -255, 255);
     pwm_right = constrain(pwm_right, -255, 255);
 
-    if (motion_mode != START && motion_mode != STOP && (kalmanfilter_angle < balance_angle_min || balance_angle_max < kalmanfilter_angle)) {
+    if (!carInSafeAngle() && motion_mode != START && motion_mode != STOP) {
         motion_mode = STOP;
-        carStop();
+        stopCar();
     }
 
     if (motion_mode == STOP) {
@@ -278,7 +287,8 @@ void setPwmToMotor(){
         settingCarSpeed = 0;
         pwm_left = 0;
         pwm_right = 0;
-        carStop();
+        stopCar();
+
     } else {
         if (pwm_left < 0) {
             digitalWrite(AIN1, 1);
@@ -316,15 +326,16 @@ void readLinearAndAngularMovement(){
     rotationCarPulse += encoderRotacioPulse;
     rotationCar = (2.0 * 3.1416) * float(rotationCarPulse) / (PULSEPERROTATION * 2.0 * (WEELSDISTANCE / WEELDIAM));
 
-    velAngularRoda = (2.0 * 3.1416) * (moveCarPulseLongPeriod / PULSEPERROTATION) * (1000.0 / (multipleDtLlacVelocitat*dtTascaPrincipalMilis));
+    velAngularRoda = (2.0 * 3.1416) * (moveCarPulseLongPeriod / PULSEPERROTATION) * (1000.0 / (timesFastTask*dtFastTaskMillis));
 
     moveCarLongPeriod = (moveCarPulseLongPeriod / PULSEPERROTATION) * WEELDIAM * 3.1416;
-    velocitatCar = (moveCarLongPeriod * 1000.0) / (multipleDtLlacVelocitat*dtTascaPrincipalMilis);
+    velocitatCar = (moveCarLongPeriod * 1000.0) / (timesFastTask*dtFastTaskMillis);
 
     posicioCar += moveCarLongPeriod;
     posicioPulsos += moveCarPulseLongPeriod;
 
 }
+
 
 
 void speedControl() {
@@ -366,18 +377,17 @@ void speedControl() {
 
 }
 
-void angularSpeedControl(){
+void rotationControl(){
 
     // TODO: Llaç de rotació. Corregeig amb un P contra la velocitat, i no contra l'error. Peruquè??
-    rotacioParcialGraus = kalmanfilter.Gyro_z * multipleDtLlacVelocitat*dtTascaPrincipalMilis / 1000.0;
-    rotacioCarGraus += rotacioParcialGraus;
+    partialRotationDeg = kalmanfilter.Gyro_z * timesFastTask*dtFastTaskMillis / 1000.0;
+    rotationCarDeg += partialRotationDeg;
     //rotacioCarGraus = fmod(rotacioCarGraus, 360.0);
 
-    rotation_control_output = kp_turn * settingTurnSpeed + kd_turn * kalmanfilter.Gyro_z;
+    rotationControlOutput = kpTurnControl*settingTurnSpeed; // Velocitat teòrica
+    rotationControlOutput += kdTurnControl * (settingTurnSpeed - kalmanfilter.Gyro_z); // correcció
 
 }
-
-
 
 
 void encoderCountRightA()
@@ -398,7 +408,7 @@ void carInitialize()
     pinMode(PWMB_RIGHT, OUTPUT);
     pinMode(STBY_PIN, OUTPUT);
 
-    carStop();
+    stopCar();
 
     Wire.begin();
     mpu.initialize();
@@ -413,7 +423,17 @@ void initializeEncoders(){
 void launchControlTask(void (*f)(), unsigned long ms){
 
     //llança una tasca ciclica de n ms
-    MsTimer2::set(dtTascaPrincipalMilis, f);
+    MsTimer2::set(dtFastTaskMillis, f);
     MsTimer2::start();
 
+}
+
+// Auxiliary functions
+
+void stopCar(){
+    digitalWrite(AIN1, HIGH);
+    digitalWrite(BIN1, LOW);
+    digitalWrite(STBY_PIN, HIGH);
+    analogWrite(PWMA_LEFT, 0);
+    analogWrite(PWMB_RIGHT, 0);
 }

@@ -44,7 +44,7 @@ void KalmanFilter::Angle(int16_t ax, int16_t ay, int16_t az, int16_t gxInp, int1
   float Angle = atan2(ay , az) * 57.3;
   Gyro_x = (gx) / 131; // -128.1 originalment? 
   Kalman_Filter(Angle, Gyro_x, dt, Q_angle, Q_gyro, R_angle, C_0);
-  Gyro_z = -gz / 131;
+  Gyro_z = gz / 131;
 
   Gyro_y = gy / 131; // Todo mirar si es correcte
 }
